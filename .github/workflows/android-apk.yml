@@ -1,0 +1,58 @@
+name: Android APK
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'android/**'
+      - 'newal_mobile/**'
+      - 'ui/**'
+      - '.github/workflows/android-apk.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Verify Python engine
+        run: python3 -m unittest discover -s tests -t .
+      - name: Package the verified engine inside the APK
+        run: python3 android/package_engine.py
+      - name: Test embedded Termux bootstrap against a real loopback server
+        run: python3 -m unittest android/test_bootstrap.py
+      - name: Assemble installable debug APK
+        working-directory: android
+        run: gradle --no-daemon :app:assembleDebug
+      - name: Check APK contents
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          apk = Path('android/app/build/outputs/apk/debug/app-debug.apk')
+          assert apk.is_file() and apk.stat().st_size > 100_000
+          with ZipFile(apk) as z:
+              names = set(z.namelist())
+              assert 'classes.dex' in names
+              assert 'assets/engine.zip' in names
+              assert 'assets/bootstrap.py' in names
+          print(f'APK verified: {apk.stat().st_size} bytes')
+          PY
+      - name: Upload M6 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: M6-android-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+          if-no-files-found: error

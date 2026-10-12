@@ -1,0 +1,6 @@
+.gradle/
+build/
+app/build/
+app/src/main/assets/engine.zip
+local.properties
+*.iml
