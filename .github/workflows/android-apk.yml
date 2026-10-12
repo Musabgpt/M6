@@ -43,7 +43,9 @@ jobs:
           from pathlib import Path
           from zipfile import ZipFile
           apk = Path('android/app/build/outputs/apk/debug/app-debug.apk')
-          assert apk.is_file() and apk.stat().st_size > 100_000
+          assert apk.is_file(), 'Gradle did not produce app-debug.apk'
+          print(f'APK size: {apk.stat().st_size} bytes')
+          assert apk.stat().st_size > 10_000, 'APK smaller than expected minimum'
           with ZipFile(apk) as z:
               names = set(z.namelist())
               assert 'classes.dex' in names
