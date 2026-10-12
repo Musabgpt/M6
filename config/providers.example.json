@@ -1,0 +1,22 @@
+[
+  {
+    "name": "kilo-auto-free",
+    "base_url": "https://api.kilo.ai/api/gateway",
+    "model": "kilo-auto/free",
+    "privacy_tier": "free-shared"
+  },
+  {
+    "name": "groq",
+    "base_url": "https://api.groq.com/openai/v1",
+    "model": "REPLACE_WITH_CURRENT_MODEL_ID",
+    "api_key_env": "GROQ_API_KEY",
+    "privacy_tier": "free-shared"
+  },
+  {
+    "name": "openrouter",
+    "base_url": "https://openrouter.ai/api/v1",
+    "model": "REPLACE_WITH_CURRENT_FREE_MODEL_ID",
+    "api_key_env": "OPENROUTER_API_KEY",
+    "privacy_tier": "free-shared"
+  }
+]

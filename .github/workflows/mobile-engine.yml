@@ -1,0 +1,41 @@
+name: mobile-engine
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Engine, HTTP and integration tests
+        run: python -W error::ResourceWarning -m unittest discover -s tests -t .
+      - name: Install Chromium for Playwright
+        run: |
+          python -m pip install --quiet playwright
+          python -m playwright install --with-deps chromium
+      - name: Real-browser check at a phone viewport
+        run: python tests/e2e/browser_mobile_e2e.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Browser-level UI test (jsdom)
+        working-directory: tests/e2e
+        run: |
+          npm ci
+          node ui_smoke.mjs
+      - name: Keep screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-screenshots
+          path: tests/e2e/artifacts/
+          if-no-files-found: ignore

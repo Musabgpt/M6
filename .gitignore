@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+tests/e2e/node_modules/
+.newal-*
+tests/e2e/artifacts/
+.venv/
