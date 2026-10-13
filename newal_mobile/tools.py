@@ -12,6 +12,7 @@ import contextlib
 import difflib
 import os
 import re
+import shutil
 import signal
 import stat
 import subprocess
@@ -20,7 +21,9 @@ import threading
 import uuid
 from dataclasses import dataclass
 
+from .safety import risk_reason
 from .sandbox import SandboxError, resolve_in_workspace
+from .tasks import TASK_SPECS, TaskError
 
 MAX_READ_BYTES = 200_000
 MAX_WRITE_BYTES = 500_000
@@ -86,14 +89,21 @@ TOOL_SPECS = [
             "content": {"type": "string"}},
             "required": ["path", "content"]}}},
     {"type": "function", "function": {
+        "name": "git_status",
+        "description": "Show the git branch, changed files and a diff summary of the workspace (read-only, no approval needed).",
+        "parameters": {"type": "object", "properties": {
+            "path": {"type": "string", "description": "Repository directory inside the workspace. Defaults to '.'."}},
+            "required": []}}},
+    {"type": "function", "function": {
         "name": "run_command",
-        "description": "Run a bash command in the workspace. The user must approve it first; its output is unavailable until then.",
+        "description": "Run a shell command (bash in Termux, sh inside the Android app) in the workspace. The user must approve it first; its output is unavailable until then.",
         "parameters": {"type": "object", "properties": {
             "command": {"type": "string"}},
             "required": ["command"]}}},
 ]
 
-_PARAMS = {spec["function"]["name"]: spec["function"]["parameters"] for spec in TOOL_SPECS}
+_PARAMS = {spec["function"]["name"]: spec["function"]["parameters"] for spec in TOOL_SPECS + TASK_SPECS}
+_TASK_TOOLS = frozenset(spec["function"]["name"] for spec in TASK_SPECS)
 
 
 class ToolRefusal(Exception):
@@ -116,6 +126,7 @@ class Approval:
     command: str
     status: str = "pending"   # pending | approved | denied | done
     result: dict | None = None
+    risk: str | None = None   # why the command looks dangerous, shown on the approval card
 
 
 # Best-effort redaction of command output before the model sees it (MX-B06). File contents are
@@ -165,6 +176,8 @@ def _validate(name: str, args) -> str | None:
             return f"{key} must be a string"
         if spec["type"] == "integer" and (isinstance(value, bool) or not isinstance(value, int)):
             return f"{key} must be an integer"
+        if spec["type"] == "boolean" and not isinstance(value, bool):
+            return f"{key} must be true or false"
     return None
 
 
@@ -197,11 +210,13 @@ def _atomic_write(target, text: str) -> None:
 
 def _run_shell(command: str, cwd: str, timeout: int) -> dict:
     try:
-        proc = subprocess.Popen(["bash", "-c", command], cwd=cwd, stdin=subprocess.DEVNULL,
+        # Termux and desktops have bash; inside the standalone APK only Android's sh exists.
+        shell = shutil.which("bash") or ("/system/bin/sh" if os.path.exists("/system/bin/sh") else "sh")
+        proc = subprocess.Popen([shell, "-c", command], cwd=cwd, stdin=subprocess.DEVNULL,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 start_new_session=True)
     except FileNotFoundError:
-        return _err("bash is not available")
+        return _err("no shell is available")
     except OSError as exc:
         return _err(f"could not start command: {exc.strerror or type(exc).__name__}")
     try:
@@ -215,8 +230,10 @@ def _run_shell(command: str, cwd: str, timeout: int) -> dict:
 
 
 class ToolBox:
-    def __init__(self, root, *, command_timeout_s: int = DEFAULT_COMMAND_TIMEOUT_S, runner=None):
+    def __init__(self, root, *, command_timeout_s: int = DEFAULT_COMMAND_TIMEOUT_S, runner=None,
+                 task_store=None):
         self.root = os.path.realpath(str(root))
+        self.task_store = task_store
         self.command_timeout_s = command_timeout_s
         self._runner = runner or _run_shell
         self._lock = threading.RLock()
@@ -224,14 +241,19 @@ class ToolBox:
         self.approvals: dict[str, Approval] = {}
 
     def specs(self) -> list[dict]:
-        return TOOL_SPECS
+        return TOOL_SPECS + (TASK_SPECS if self.task_store is not None else [])
 
     def execute(self, name, args) -> dict:
-        if name not in _PARAMS:
+        if name not in _PARAMS or (name in _TASK_TOOLS and self.task_store is None):
             return _err(f"unknown tool: {name}")
         problem = _validate(name, args)
         if problem:
             return _err(problem)
+        if name in _TASK_TOOLS:
+            try:
+                return _ok(self.task_store.execute(name, args))
+            except TaskError as exc:
+                return _err(str(exc))
         handler = getattr(self, "_t_" + name)  # name is already checked against _PARAMS
         try:
             return handler(**args)
@@ -335,6 +357,25 @@ class ToolBox:
     def _rel(self, target) -> str:
         return os.path.relpath(str(target), self.root)
 
+    def _t_git_status(self, path: str = ".") -> dict:
+        target = resolve_in_workspace(self.root, path)
+        if not target.is_dir():
+            raise ToolRefusal("not a directory")
+        out = []
+        for argv in (["git", "status", "--short", "--branch"], ["git", "diff", "--stat"]):
+            try:
+                proc = subprocess.run(argv, cwd=str(target), stdin=subprocess.DEVNULL, capture_output=True,
+                                      timeout=15, env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"})
+            except FileNotFoundError:
+                raise ToolRefusal("git is not installed (run: pkg install git)") from None
+            except subprocess.TimeoutExpired:
+                raise ToolRefusal("git took too long") from None
+            text = (proc.stdout + proc.stderr).decode("utf-8", "replace").strip()
+            if proc.returncode != 0:
+                raise ToolRefusal(redact_secrets(text) or "not a git repository")
+            out.append(text)
+        return _ok(redact_secrets("\n\n".join(t for t in out if t)) or "clean")
+
     # ----- commands (approval required) ------------------------------------
 
     def _t_run_command(self, command: str) -> dict:
@@ -342,10 +383,10 @@ class ToolBox:
             raise ToolRefusal("command is empty")
         if any(pattern in command for pattern in HARD_BLOCKED):
             raise ToolRefusal("command matches a blocked pattern")
-        approval = Approval(id=uuid.uuid4().hex[:12], command=command)
+        approval = Approval(id=uuid.uuid4().hex[:12], command=command, risk=risk_reason(command))
         with self._lock:
             self.approvals[approval.id] = approval
-        return {"ok": True, "status": "awaiting_approval", "approval_id": approval.id,
+        return {"ok": True, "status": "awaiting_approval", "approval_id": approval.id, "risk": approval.risk,
                 "output": "The user must approve this command before it runs. Its output is not available yet."}
 
     def approve(self, approval_id: str, allow: bool) -> dict:
