@@ -147,6 +147,64 @@ def main():
             page.wait_for_function("() => document.getElementById('log').textContent.includes('Command denied.')")
             check(not Path(workspace, "denied.txt").exists(), "denied command did not run")
 
+            print("Flow 4: task list and markdown answer")
+            page.fill("#goal", "plan the work")
+            page.tap("#send")
+            page.wait_for_function("() => !document.getElementById('send').disabled"
+                                   " && document.getElementById('log').textContent.includes('Plan ready.')", timeout=20000)
+            check(page.locator("#todoPanel").is_visible() and "Tasks 1/2" in page.locator("#todoPanel").inner_text(),
+                  "task panel shows the agent's task list (1/2 done)")
+            check(page.locator(".codeblock pre").last.inner_text() == "print('hi')",
+                  "fenced code in the answer renders as a code block")
+            page.screenshot(path=str(ARTIFACTS / "06-tasks.png"))
+
+            print("Flow 5: slash commands and apply-edits mode")
+            page.fill("#goal", "/")
+            check(page.locator("#slashMenu").is_visible() and "/sessions" in page.locator("#slashMenu").inner_text(),
+                  "typing / opens the command menu")
+            page.screenshot(path=str(ARTIFACTS / "07-slash.png"))
+            page.fill("#goal", "/mode")
+            page.tap("#send")
+            page.wait_for_function("() => document.getElementById('btnMode').textContent.includes('apply edits')")
+            page.fill("#goal", "change return 1 to return 2 again")
+            page.tap("#send")
+            page.wait_for_function("() => !document.getElementById('send').disabled"
+                                   " && document.querySelectorAll('.badge').length > 0", timeout=20000)
+            check("return 2" in Path(workspace, "app.py").read_text(),
+                  "in apply-edits mode the change is written without a review step")
+            page.tap("#btnMode")
+            page.wait_for_function("() => document.getElementById('btnMode').textContent.includes('ask before')")
+
+            print("Flow 6: Stop while the model is thinking")
+            page.fill("#goal", "slow task")
+            page.tap("#send")
+            page.wait_for_selector("#stop:not([hidden])", timeout=5000)
+            page.wait_for_selector("#spinner:not([hidden])", timeout=5000)
+            check("Thinking" in page.locator("#spinner").inner_text(), "a live spinner shows while the agent works")
+            page.screenshot(path=str(ARTIFACTS / "09-working.png"))
+            page.tap("#stop")
+            page.wait_for_function("() => !document.getElementById('send').disabled"
+                                   " && document.getElementById('log').textContent.includes('Stopped by you')", timeout=20000)
+            check(not Path(workspace, "never.txt").exists(), "after Stop, the command the model asked for was not run")
+
+            print("Flow 7: sessions")
+            page.fill("#goal", "/new")
+            page.tap("#send")
+            page.fill("#goal", "hello")
+            page.tap("#send")
+            page.wait_for_function("() => !document.getElementById('send').disabled"
+                                   " && document.getElementById('log').textContent.includes('No rule matched.')", timeout=20000)
+            page.tap("#btnSessions")
+            page.wait_for_selector("#sessionsDlg[open] .list-item")
+            check(page.locator("#sessionList .list-item").count() == 2, "sessions list shows both sessions")
+            page.screenshot(path=str(ARTIFACTS / "08-sessions.png"))
+            page.locator("#sessionList .list-item", has_text="change return 1").tap()
+            page.wait_for_function("() => document.getElementById('log').textContent.includes('Plan ready.')")
+            check(True, "tapping a session reopens its full conversation")
+            page.reload()
+            page.wait_for_function("() => document.getElementById('log').textContent.includes('Plan ready.')")
+            check(True, "after a page reload the last session is restored")
+
             print("Files drawer and viewer")
             page.tap("#btnFiles")
             page.wait_for_selector("#filesDlg[open]")

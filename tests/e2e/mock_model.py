@@ -7,7 +7,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 def decide(messages):
-    goal = next((m["content"] for m in messages if m["role"] == "user"), "")
+    # Sessions are multi-turn: the rules follow the newest user message.
+    goal = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
     last = messages[-1]
 
     def call(name, args):
@@ -21,6 +22,18 @@ def decide(messages):
         if last["role"] == "tool" and "return 1" in last["content"]:
             return call("propose_edit", {"path": "app.py", "old_text": "return 1", "new_text": "return 2"})
         return {"role": "assistant", "content": "Proposed the change for your review."}
+    if goal.startswith("plan"):
+        if last["role"] == "user":
+            return call("todo_write", {"todos": [
+                {"content": "Read the code", "status": "completed"},
+                {"content": "Write the fix", "status": "in_progress"}]})
+        return {"role": "assistant", "content": "Plan ready.\n\n```python\nprint('hi')\n```"}
+    if goal.startswith("slow"):
+        if last["role"] == "user":
+            import time
+            time.sleep(3)   # gives the browser time to press Stop while the model is "thinking"
+            return call("run_command", {"command": "echo never > never.txt"})
+        return {"role": "assistant", "content": "should not get here"}
     if goal.startswith("run"):
         if last["role"] == "user":
             target = "denied.txt" if "deny" in goal else "approved.txt"
