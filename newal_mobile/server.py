@@ -19,6 +19,7 @@ from . import __version__
 from .agent import Run, RunError
 from .config import ConfigError, load_or_create_token, load_providers, state_dir, workspace_dir
 from .prompt import SYSTEM_PROMPT
+from .tasks import TaskStore
 from .providers import FallbackChain
 from .tools import DEFAULT_COMMAND_TIMEOUT_S, ToolBox
 
@@ -51,7 +52,7 @@ class AppState:
 
     def __init__(self, workspace, token: str, chain, *, system_prompt: str = SYSTEM_PROMPT,
                  max_steps: int = 12, max_wall_s: float = 300.0,
-                 command_timeout_s: int = DEFAULT_COMMAND_TIMEOUT_S):
+                 command_timeout_s: int = DEFAULT_COMMAND_TIMEOUT_S, state_directory=None):
         self.workspace = os.path.realpath(str(workspace))
         os.makedirs(self.workspace, exist_ok=True)
         self.token = token
@@ -59,7 +60,8 @@ class AppState:
         self.system_prompt = system_prompt
         self.max_steps = max_steps
         self.max_wall_s = max_wall_s
-        self.toolbox = ToolBox(self.workspace, command_timeout_s=command_timeout_s)
+        store = TaskStore(state_directory, self.workspace) if state_directory else None
+        self.toolbox = ToolBox(self.workspace, command_timeout_s=command_timeout_s, task_store=store)
         self.runs: OrderedDict[str, Run] = OrderedDict()
         self.lock = threading.RLock()
 
@@ -262,7 +264,8 @@ def main(argv=None) -> int:
     if not providers:
         print("no usable providers: check the api_key_env variables in providers.json", file=sys.stderr)
         return 2
-    state = AppState(args.workspace or workspace_dir(), token, FallbackChain(providers))
+    state = AppState(args.workspace or workspace_dir(), token, FallbackChain(providers),
+                     state_directory=home)
     server = make_server("127.0.0.1", args.port, state)
     print(f"NewAl Mobile on http://127.0.0.1:{args.port}  (open this in the phone browser)")
     print(f"Access token file: {home / 'token'}  (paste it into the page once)")
