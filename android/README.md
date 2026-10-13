@@ -5,7 +5,7 @@
 The web UI is shown in a locked-down WebView that only talks to `127.0.0.1:8787`.
 
 ## Install
-1. Open the latest successful **Android APK** run in GitHub Actions and download `M6-standalone-debug-apk`.
+1. Open the latest successful **Android APK** run in GitHub Actions and download `M6-android-debug-apk`.
 2. Unzip it and install `app-debug.apk` (allow "install unknown apps" for your browser or file manager).
 3. Open M6. The engine starts inside the app and the chat opens. No setup, no token to paste.
 
