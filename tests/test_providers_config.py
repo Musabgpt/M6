@@ -82,9 +82,10 @@ class FallbackTests(unittest.TestCase):
 
 
 class ConfigTests(unittest.TestCase):
-    def test_default_provider_is_the_keyless_route_from_the_repo(self):
+    def test_default_providers_are_the_keyless_routes_from_the_repos(self):
         providers = load_providers(None, env={})
-        self.assertEqual([p.name for p in providers], ["kilo-auto-free"])
+        self.assertEqual([p.name for p in providers],
+                         ["kilo-auto-free", "llm7-free", "pollinations-free", "ovhcloud-free"])
         self.assertEqual(providers[0].base_url, "https://api.kilo.ai/api/gateway")
 
     def test_plain_http_to_a_remote_host_is_rejected(self):

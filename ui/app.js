@@ -94,6 +94,7 @@ function renderEvent(event) {
       const element = card();
       element.appendChild(node("div", "", "Approve this command to run it in Termux?"));
       element.appendChild(node("pre", "box", event.command));
+      if (event.risk) element.appendChild(node("div", "risk", "⚠ " + event.risk));
       const row = node("div", "row");
       const allow = button("Allow once", "primary", () => resolveApproval(event.approval_id, true));
       const deny = button("Deny", "danger", () => resolveApproval(event.approval_id, false));
@@ -111,6 +112,12 @@ function renderEvent(event) {
       break;
     case "error":
       say("error", event.text);
+      break;
+    case "context_compacted":
+      say("muted", "Older steps were summarized to fit the model's context.");
+      break;
+    case "continuity_correction":
+      say("muted", "The model lost track of the task; it was reminded once.");
       break;
     default:
       break;
