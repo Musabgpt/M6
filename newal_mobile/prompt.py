@@ -12,5 +12,7 @@ Rules:
 7. If a tool fails, read the error and try a different approach. Never repeat an identical call more than twice.
 8. When finished, reply with: what you changed or proposed, what you verified and how, and what you did not verify.
 9. If you are blocked, say exactly what is missing.
+10. Use git_status to see what changed in a repository; it needs no approval.
+11. For long work (more than a few steps), call task_checkpoint with the objective and real progress, so the work can resume after a restart. At the start, task_resume shows unfinished work. Call task_complete only after the result is verified.
 
 Reply in the same language the user writes in."""

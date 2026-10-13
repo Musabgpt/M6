@@ -13,6 +13,7 @@ import time
 import uuid
 from collections import Counter
 
+from . import continuity
 from .providers import ProviderError
 
 
@@ -22,7 +23,8 @@ class RunError(ValueError):
 
 class Run:
     def __init__(self, goal, toolbox, provider, system_prompt, *, max_steps=12, max_wall_s=300.0,
-                 repeat_limit=3, clock=time.monotonic, run_id=None):
+                 repeat_limit=3, clock=time.monotonic, run_id=None,
+                 context_budget_chars=continuity.DEFAULT_BUDGET_CHARS):
         if not isinstance(goal, str) or not goal.strip():
             raise RunError("goal must be non-empty text")
         self.id = run_id or uuid.uuid4().hex[:12]
@@ -45,6 +47,8 @@ class Run:
         self._queue: list[dict] = []   # tool calls of the current model turn, head first
         self._seen: Counter = Counter()
         self._approval_id: str | None = None
+        self.context_budget_chars = context_budget_chars
+        self._corrected = False
 
     def advance(self) -> dict:
         if self.status != "running":
@@ -61,6 +65,10 @@ class Run:
                 self._fail("time budget reached")
                 break
             self.steps += 1
+            self.messages, trimmed = continuity.compact(self.messages, self.goal,
+                                                        budget_chars=self.context_budget_chars)
+            if trimmed:
+                self._event("context_compacted", messages=len(self.messages))
             try:
                 message, provider_name = self.provider.complete(self.messages, self.toolbox.specs())
             except ProviderError as exc:
@@ -70,6 +78,11 @@ class Run:
             self.messages.append(assistant)
             calls = assistant.get("tool_calls", [])
             self._event("model", provider=provider_name, step=self.steps, tool_calls=len(calls))
+            if not calls and not self._corrected and continuity.lost_task(assistant["content"], self.goal):
+                self._corrected = True  # small free models sometimes forget the task; correct once
+                self.messages.append({"role": "user", "content": continuity.correction(self.goal)})
+                self._event("continuity_correction")
+                continue
             if not calls:
                 self.final = assistant["content"]
                 self.status = "done"
@@ -94,7 +107,8 @@ class Run:
         pending = None
         if self.status == "awaiting_approval":
             approval = self.toolbox.approvals.get(self._approval_id)
-            pending = {"approval_id": self._approval_id, "command": approval.command if approval else ""}
+            pending = {"approval_id": self._approval_id, "command": approval.command if approval else "",
+                       "risk": approval.risk if approval else None}
         return {"id": self.id, "status": self.status, "steps": self.steps, "final": self.final,
                 "error": self.error, "pending_approval": pending, "events": list(self.events)}
 
@@ -119,7 +133,7 @@ class Run:
                 self._approval_id = result["approval_id"]
                 self.status = "awaiting_approval"
                 self._event("approval_requested", approval_id=self._approval_id,
-                            command=(args or {}).get("command", ""))
+                            command=(args or {}).get("command", ""), risk=result.get("risk"))
                 return True
             self._queue.pop(0)
             self._record_tool(call_id, name, args, result)

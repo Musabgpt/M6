@@ -1,31 +1,35 @@
-# M6 Android APK
+# M6 Android APK — standalone
 
-**A native Android installable APK, not a PWA shortcut.** It opens the M6 HTML/JS UI in a locked-down WebView and invokes the *bundled Python agent engine* through Termux's official permission-gated `RUN_COMMAND` background service. It never opens a separate terminal window as part of normal startup.
+**A self-contained Android app. Termux is not needed.** The APK embeds a real CPython 3.12
+(via [Chaquopy](https://chaquo.com/chaquopy/)) and runs the same `newal_mobile` engine inside the app.
+The web UI is shown in a locked-down WebView that only talks to `127.0.0.1:8787`.
 
-## Requirements (one-time)
+## Install
+1. Open the latest successful **Android APK** run in GitHub Actions and download `M6-android-debug-apk`.
+2. Unzip it and install `app-debug.apk` (allow "install unknown apps" for your browser or file manager).
+3. Open M6. The engine starts inside the app and the chat opens. No setup, no token to paste.
 
-1. Install the compatible Termux app from F-Droid or the official Termux GitHub release, **not** its outdated Play Store version.
-2. Install Python inside Termux once: `pkg install -y python` (already installed on most existing setups).
-3. In Termux `~/.termux/termux.properties`, set `allow-external-apps = true`, then run `termux-reload-settings`.
-4. Install M6 APK and grant **Run commands in Termux environment** to M6 in Android Settings > Apps > M6 > Permissions > Additional permissions (or accept the system permission request).
-5. Launch M6. The app installs/updates the engine in Termux, starts it in the background, and opens its own WebView. After first setup no Termux window should be necessary for day-to-day use.
+## Where things live
+- Workspace: `Android/data/ai.musab.m6/files/workspace` (visible to file managers that can open app folders).
+- Settings, token and task checkpoints: app-private storage.
+- Optional providers: put a `providers.json` in the app's `engine-home` folder (see `config/providers.example.json`).
+  Keyless free routes work by default.
 
-The Android app **is not a self-contained Python runtime**. Termux remains an explicit, mandatory backend. The APK includes `newal_mobile/` and `ui/` but does not embed all Python/Termux binaries. On some Android versions or Termux builds, the user may need to adjust system settings. See [official RUN_COMMAND documentation](https://github.com/termux/termux-app/wiki/RUN_COMMAND-Intent).
+## Limits (honest)
+- Commands run with Android's `/system/bin/sh` inside the app sandbox. There is **no** `git`, `python` CLI,
+  `pkg` or `node`; the read-only `git_status` tool reports that git is missing. For full Linux tools, use the
+  Termux mode from the main README.
+- The engine runs while the app is alive. Android may stop it in the background; reopening the app restarts it.
+- The APK is debug-signed, ABIs `arm64-v8a` (phones) and `x86_64` (emulator). It is roughly 30–40 MB.
+- Not yet verified on a physical phone. CI proves it builds and contains the runtime, not that every device works.
 
 ## Security boundary
+- No Accessibility service, no device control, no extra permissions beyond `INTERNET`.
+- Engine binds to 127.0.0.1 only and needs a per-install random bearer token, kept in app-private preferences.
+- Shell commands still need your tap on **Allow** for each exact command, with a warning for risky ones.
 
-- No Android Accessibility control, screen-reading, unrestricted device control, or automatic all-permission grant.
-- M6 requires `com.termux.permission.RUN_COMMAND`, which grants powerful code execution **inside the user's Termux environment**, not system-level root access. Explicit Android permission and Termux's `allow-external-apps` gate are mandatory.
-- Startup command runs as a **background** Termux command. It never asks Termux to open its terminal Activity.
-- APK serves its bundled engine over a temporary random-path `127.0.0.1` socket. The Termux Python installer checks its SHA-256 before extracting it into a versioned private Termux directory. No remote download or APK-side shell interpreter is involved.
-- WebView navigates only to `http://127.0.0.1:8787/`; the pre-existing Python engine requires a bearer token for API routes. Native Android passes the per-install token to the backend, stores it in Android private preferences, then initializes WebView localStorage. Android and Termux are separate app identities: the token is passed through the permissioned startup intent.
-- If another service occupies TCP port 8787, the backend may not start. If Termux or the process is killed, return to M6 and tap retry. For detailed errors check `~/.m6/engine.log` inside Termux.
-
-## Building
-
-This is a regular Gradle Android project. In GitHub Actions, `android-apk.yml` packages the Python engine and UI into `app/src/main/assets/engine.zip` and builds an **installable, debug-signed APK**. No private signing keys are required. Download `M6-android-debug-apk` from the successful workflow run; unzip the uploaded artifact to obtain `app-debug.apk`.
-
-For a local build with Android SDK, JDK 17 and Gradle 8.9:
+## Build locally
+Needs JDK 17, Android SDK, Gradle 8.9 and Python 3.12 on the build machine:
 
 ```sh
 python3 -m unittest discover -s tests -t .
@@ -34,5 +38,3 @@ gradle -p android --no-daemon :app:assembleDebug
 ```
 
 Output: `android/app/build/outputs/apk/debug/app-debug.apk`.
-
-**Not yet verified on a physical phone:** runtime permission dialogs, Samsung background execution, end-to-end Termux dispatch, and providers needing account keys. A CI green check proves compilation and automated tests, not that every device and model works.
