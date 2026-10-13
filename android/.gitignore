@@ -2,5 +2,7 @@
 build/
 app/build/
 app/src/main/assets/engine.zip
+app/src/main/assets/ui/
+app/src/main/python/
 local.properties
 *.iml

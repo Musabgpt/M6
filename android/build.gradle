@@ -1,3 +1,5 @@
 plugins {
     id 'com.android.application' version '8.7.3' apply false
+    // Embeds a real CPython in the APK, so the agent engine runs without Termux.
+    id 'com.chaquo.python' version '16.0.0' apply false
 }
