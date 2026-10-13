@@ -19,11 +19,16 @@ Consequence: no APK yet. A thin WebView wrapper can be added later without chang
 ## ADR-003 Propose, then accept
 Writes are stored as changes and applied only on explicit accept, with a conflict check on the file.
 Reason: a model that edits silently is hard to audit on a phone screen. Diff review is the safe default.
+Update (v0.2): the user can opt in to "apply edits" mode. Proposals are then applied at once, still through the
+same sandbox, sensitive-file and conflict checks, and every applied change keeps its Undo. The default stays "ask".
 
-## ADR-004 Approval per command, no always-allow
-Each `run_command` shows the exact command and needs one tap. No standing permission exists.
-Reason: model output and file content are untrusted. A standing grant would turn one injected instruction
+## ADR-004 Approval per command; "Allow always" only for one exact command in one session
+Each `run_command` shows the exact command and needs one tap.
+Reason: model output and file content are untrusted. A broad standing grant would turn one injected instruction
 into permanent shell access.
+Update (v0.2): the user may tap "Allow always" on a command card. That allows only that exact command text, only in
+that session (it is stored with the session). No prefixes, wildcards or "allow everything" mode exist, and any
+different command still asks. The hard-blocked patterns still apply.
 
 ## ADR-005 Fallback stays within the privacy tier
 A failing provider is replaced only by a provider in the same tier unless `allow_cross_tier` is set.
@@ -31,4 +36,4 @@ Reason: silently moving a private workspace to a public free route would violate
 
 ## ADR-006 Stdlib only, no web framework
 Reason: fewer supply-chain surfaces and nothing to install on Termux beyond Python.
-Trade-off: no streaming yet. The server uses plain HTTP and returns whole turns.
+Trade-off: no token streaming. Turns run in a background thread and the phone polls for per-step progress (v0.2).
