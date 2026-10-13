@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import difflib
+import fnmatch
 import os
 import re
 import signal
@@ -27,6 +28,7 @@ MAX_WRITE_BYTES = 500_000
 MAX_OUTPUT_CHARS = 12_000
 MAX_LIST_ENTRIES = 500
 SEARCH_MAX_HITS = 200
+GLOB_MAX_HITS = 300
 SEARCH_MAX_FILE_BYTES = 1_000_000
 DEFAULT_COMMAND_TIMEOUT_S = 60
 SKIP_DIRS = frozenset({".git", "node_modules", "__pycache__", ".venv", ".gradle", "build"})
@@ -70,6 +72,13 @@ TOOL_SPECS = [
             "text": {"type": "string"},
             "path": {"type": "string", "description": "Directory to search. Defaults to '.'."}},
             "required": ["text"]}}},
+    {"type": "function", "function": {
+        "name": "glob_files",
+        "description": "Find files by name pattern, e.g. '**/*.py', 'src/**/test_*.js' or '*.md'. Returns relative paths.",
+        "parameters": {"type": "object", "properties": {
+            "pattern": {"type": "string"},
+            "path": {"type": "string", "description": "Directory to search. Defaults to '.'."}},
+            "required": ["pattern"]}}},
     {"type": "function", "function": {
         "name": "propose_edit",
         "description": "Propose replacing exactly one occurrence of old_text with new_text in an existing file. Not applied until the user accepts.",
@@ -295,6 +304,27 @@ class ToolBox:
                             return _ok("\n".join(hits) + "\n(limit reached)")
         return _ok("\n".join(hits) or "(no matches)")
 
+    def _t_glob_files(self, pattern: str, path: str = ".") -> dict:
+        pattern = pattern.strip().removeprefix("./")
+        if not pattern:
+            raise ToolRefusal("pattern must not be empty")
+        base = resolve_in_workspace(self.root, path)
+        if not base.is_dir():
+            raise ToolRefusal("not a directory")
+        # "**/" also matches files directly in the base directory.
+        patterns = {pattern, pattern.replace("**/", "")}
+        hits: list[str] = []
+        for dirpath, dirnames, filenames in os.walk(base):
+            dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+            for filename in sorted(filenames):
+                rel_base = os.path.relpath(os.path.join(dirpath, filename), base).replace(os.sep, "/")
+                if any(fnmatch.fnmatchcase(rel_base, p) for p in patterns) or (
+                        "/" not in pattern and fnmatch.fnmatchcase(filename, pattern)):
+                    hits.append(os.path.relpath(os.path.join(dirpath, filename), self.root))
+                    if len(hits) >= GLOB_MAX_HITS:
+                        return _ok("\n".join(hits) + "\n(limit reached)")
+        return _ok("\n".join(hits) or "(no files match)")
+
     # ----- proposals (nothing is written here) -----------------------------
 
     def _t_propose_edit(self, path: str, old_text: str, new_text: str) -> dict:
@@ -329,7 +359,7 @@ class ToolBox:
         change = Change(id=uuid.uuid4().hex[:12], path=rel, kind=kind, old=old, new=new)
         with self._lock:
             self.changes[change.id] = change
-        return _ok(f"proposed a {kind} to {rel} (change {change.id}); "
+        return _ok(f"proposed {'an edit' if kind == 'edit' else 'a write'} to {rel} (change {change.id}); "
                    "it is not applied until the user accepts it", change_id=change.id)
 
     def _rel(self, target) -> str:
