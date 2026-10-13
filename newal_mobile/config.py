@@ -14,10 +14,18 @@ class ConfigError(ValueError):
     pass
 
 
-# The keyless free route used by the existing NewAl-Cloud app (see android-lite Setup.java).
+# Keyless free routes, from NewAl-Cloud (Setup.java) and M4's FreeLLMPool catalog (provider_routes.py).
+# They are tried in order and all share one privacy tier, so fallback never moves data to a
+# different tier. Availability and quotas are not guaranteed.
 DEFAULT_PROVIDERS = [
     {"name": "kilo-auto-free", "base_url": "https://api.kilo.ai/api/gateway",
      "model": "kilo-auto/free", "privacy_tier": "free-shared"},
+    {"name": "llm7-free", "base_url": "https://api.llm7.io/v1",
+     "model": "default", "privacy_tier": "free-shared"},
+    {"name": "pollinations-free", "base_url": "https://text.pollinations.ai/openai",
+     "model": "openai-fast", "privacy_tier": "free-shared"},
+    {"name": "ovhcloud-free", "base_url": "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
+     "model": "Qwen3-Coder-30B-A3B-Instruct", "privacy_tier": "free-shared"},
 ]
 
 
