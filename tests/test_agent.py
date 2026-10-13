@@ -43,9 +43,10 @@ class LoopTests(AgentTestCase):
         ])
         snap = run.advance()
         self.assertEqual(snap["status"], "done")
-        self.assertEqual([e["type"] for e in snap["events"]],
+        progress = ("user", "thinking", "tool_start")   # live-progress events, checked elsewhere
+        self.assertEqual([e["type"] for e in snap["events"] if e["type"] not in progress],
                          ["model", "tool", "model", "tool", "model", "final"])
-        change_event = snap["events"][3]
+        change_event = [e for e in snap["events"] if e["type"] == "tool"][1]
         self.assertIn("change_id", change_event)
         with open(os.path.join(self.root, "app.py"), encoding="utf-8") as handle:
             self.assertIn("return 1", handle.read())

@@ -13,12 +13,12 @@ model provider. Reachability was probed in this session:
 | github.com | HTTP 200 | Repository read works; push needs a separate check |
 
 ## Evidence levels (protocol §10)
-- E2 isolated tests: EXECUTED. 68 unit and integration tests (ResourceWarning as error).
+- E2 isolated tests: EXECUTED. 85 unit and integration tests (ResourceWarning as error).
 - E3 integration over real sockets: EXECUTED. Loopback mock model with the real provider client, agent loop and HTTP API.
 - E3 live process: EXECUTED. `python -m newal_mobile` probed with curl.
 - E3 socket binding: EXECUTED. Loopback connects; the machine's non-loopback address is refused.
 - E4 real browser at phone viewport: EXECUTED. Chromium, 390x844, device scale 2, touch, mobile flag, real server,
-  mock model: 14 checks pass. Screenshots reviewed (tests/e2e/artifacts/).
+  mock model: 23 checks pass (v0.2 adds sessions, task list, apply-edits mode, Stop, slash commands). Screenshots reviewed (tests/e2e/artifacts/).
 - E4 jsdom: EXECUTED. 10 checks pass (real app.js, not a real browser engine).
 - E4 Android Chrome on a device: NOT_EXECUTED.
 - E4 real model: NOT_EXECUTED (blocked, see probe table).
@@ -27,9 +27,9 @@ model provider. Reachability was probed in this session:
 | Check | Command | Result |
 |---|---|---|
 | Compile | `python3 -m py_compile newal_mobile/*.py tests/*.py` | OK |
-| Unit + integration | `python3 -W error::ResourceWarning -m unittest discover -s tests -t .` | Ran 68 tests, OK |
-| Real browser, phone viewport | `CHROMIUM_PATH=<chromium> python3 tests/e2e/browser_mobile_e2e.py` | exit 0, 14 checks |
-| jsdom (clean install in /tmp) | `NEWAL_ROOT=<project> node ui_smoke.mjs` | exit 0, 10 checks |
+| Unit + integration | `python3 -W error::ResourceWarning -m unittest discover -s tests -t .` | Ran 85 tests, OK |
+| Real browser, phone viewport | `CHROMIUM_PATH=<chromium> python3 tests/e2e/browser_mobile_e2e.py` | exit 0, 23 checks |
+| jsdom (clean install in /tmp) | `NEWAL_ROOT=<project> node ui_smoke.mjs` | v0.1: exit 0, 10 checks. v0.2: not re-run here (npm crashed in this sandbox); CI runs it |
 | Frontend and config syntax | `node --check ui/app.js`, `sh -n termux/setup.sh`, JSON parse of manifest and providers example | OK |
 | Live process | `python3 -m newal_mobile` + curl | 401 without token, 200 with token, static files 200, default route fails visibly |
 | Loopback only | connect to 127.0.0.1 and to the machine's non-loopback address | loopback OK, other address refused |
@@ -66,7 +66,7 @@ Caveat: ten hand-picked mutants. This is not a full mutation run, and no mutatio
   redaction catches every secret format.
 
 ## Not executed, with the step that would close each gap
-- T-PHONE-1 (Termux): `sh termux/setup.sh`, then `python -m unittest discover -s tests -t .`. Expect 68 OK.
+- T-PHONE-1 (Termux): `sh termux/setup.sh`, then `python -m unittest discover -s tests -t .`. Expect 85 OK.
 - T-PHONE-2 (Android Chrome): open http://127.0.0.1:8787, paste the token, check the layout and that Allow and Deny
   are reachable by touch. Closes most of MX-B09.
 - T-PHONE-3 (second browser, e.g. Firefox for Android): repeat T-PHONE-2.
