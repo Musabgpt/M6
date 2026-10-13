@@ -40,8 +40,10 @@ import java.util.Locale;
  * token. The WebView never navigates anywhere except that loopback address.
  */
 public final class MainActivity extends Activity {
-    private static final int PORT = 8787;
-    private static final String BASE = "http://127.0.0.1:" + PORT + "/";
+    // The engine picks a free loopback port at start, so another server (e.g. Termux mode on 8787)
+    // can never block the app. base is set once the engine reports its port.
+    private volatile int port = -1;
+    private volatile String base = "http://127.0.0.1:0/";
     private final Handler handler = new Handler(Looper.getMainLooper());
     private WebView browser;
     private View panelScroll;
@@ -103,7 +105,7 @@ public final class MainActivity extends Activity {
                 return !isBackend(request.getUrl());
             }
             @Override public void onPageFinished(WebView view, String url) {
-                if (!url.startsWith(BASE)) return;
+                if (!url.startsWith(base)) return;
                 String q = JSONObject.quote(token);
                 view.evaluateJavascript("(function(){try{var t=" + q
                         + ";if(localStorage.getItem('newal_token')!==t){"
@@ -130,12 +132,14 @@ public final class MainActivity extends Activity {
                 if (!workspace.isDirectory() && !workspace.mkdirs()) throw new IOException("cannot create workspace");
                 copyAssetDir(getAssets(), "ui", ui);
                 PyObject result = Python.getInstance().getModule("newal_mobile.embedded").callAttr("start",
-                        home.getAbsolutePath(), workspace.getAbsolutePath(), ui.getAbsolutePath(), token, PORT);
+                        home.getAbsolutePath(), workspace.getAbsolutePath(), ui.getAbsolutePath(), token, 0);
                 String message = result.toString();
-                if (!"ok".equals(message)) {
+                if (!message.startsWith("ok:")) {
                     showStatus("تعذّر تشغيل المحرك: " + message);
                     return;
                 }
+                port = Integer.parseInt(message.substring(3));
+                base = "http://127.0.0.1:" + port + "/";
                 for (int i = 0; i < 50; i++) {
                     if (backendReady()) {
                         handler.post(this::showBrowser);
@@ -153,7 +157,7 @@ public final class MainActivity extends Activity {
     private boolean backendReady() {
         HttpURLConnection connection = null;
         try {
-            connection = (HttpURLConnection) new URL(BASE + "api/status").openConnection();
+            connection = (HttpURLConnection) new URL(base + "api/status").openConnection();
             connection.setRequestProperty("Authorization", "Bearer " + token);
             connection.setConnectTimeout(1000);
             connection.setReadTimeout(2000);
@@ -185,11 +189,11 @@ public final class MainActivity extends Activity {
     private void showBrowser() {
         panelScroll.setVisibility(View.GONE);
         browser.setVisibility(View.VISIBLE);
-        if (browser.getUrl() == null || !browser.getUrl().startsWith(BASE)) browser.loadUrl(BASE);
+        if (browser.getUrl() == null || !browser.getUrl().startsWith(base)) browser.loadUrl(base);
     }
 
     private boolean isBackend(Uri uri) {
-        return "http".equals(uri.getScheme()) && "127.0.0.1".equals(uri.getHost()) && uri.getPort() == PORT;
+        return "http".equals(uri.getScheme()) && "127.0.0.1".equals(uri.getHost()) && uri.getPort() == port;
     }
 
     private TextView label(String content, int sp, int color) {

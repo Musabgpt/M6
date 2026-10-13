@@ -18,12 +18,15 @@ _lock = threading.Lock()
 _server = None
 
 
-def start(home: str, workspace: str, ui_dir: str, token: str, port: int = 8787) -> str:
-    """Start the engine once. Returns "ok", or a short error message for the app to show."""
+def start(home: str, workspace: str, ui_dir: str, token: str, port: int = 0) -> str:
+    """Start the engine once. Returns "ok:<port>", or a short error message for the app to show.
+
+    port=0 lets Android pick a free port, so a Termux-mode engine already on 8787 never blocks the app.
+    """
     global _server
     with _lock:
         if _server is not None:
-            return "ok"
+            return f"ok:{_server.server_address[1]}"
         if not token or len(token) < 32:
             return "token is too short"
         home_path = Path(home)
@@ -43,7 +46,7 @@ def start(home: str, workspace: str, ui_dir: str, token: str, port: int = 8787) 
             return f"port {port} is busy ({exc.strerror or type(exc).__name__})"
         threading.Thread(target=httpd.serve_forever, name="newal-engine", daemon=True).start()
         _server = httpd
-        return "ok"
+        return f"ok:{httpd.server_address[1]}"
 
 
 def stop() -> None:
